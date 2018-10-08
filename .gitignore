@@ -3,9 +3,9 @@
 .env
 .floo
 *.sqlite3
+db/
 htmlcov/
 npm-debug.log
-db/
 
 # cache, compiled & downloaded files
 *.pyc

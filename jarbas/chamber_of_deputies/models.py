@@ -1,10 +1,22 @@
-from django.contrib.postgres.fields import JSONField
+from django.contrib.postgres.fields import ArrayField, JSONField
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.db import models
 from requests import head
 
 from jarbas.chamber_of_deputies.querysets import ReimbursementQuerySet
+
+
+class SocialMedia(models.Model):
+    congressperson_name = models.CharField(max_length=255, blank=True, default='')
+    congressperson_id = models.IntegerField(blank=True, null=True, db_index=True)
+    twitter_profile = models.CharField(max_length=255, blank=True, default='')
+    secondary_twitter_profile = models.CharField(max_length=255, blank=True, default='')
+    facebook_page = models.CharField(max_length=255, blank=True, default='')
+
+    @property
+    def twitter(self):
+        return self.twitter_profile or self.secondary_twitter_profile
 
 
 class Receipt:
@@ -29,18 +41,17 @@ class Receipt:
 
 
 class Reimbursement(models.Model):
-    document_id = models.IntegerField('Número do Reembolso', db_index=True, unique=True)
+    document_id = models.IntegerField('Número do Reembolso', db_index=True)
     last_update = models.DateTimeField('Atualizado no Jarbas em', db_index=True, auto_now=True)
 
     year = models.IntegerField('Ano', db_index=True)
     applicant_id = models.IntegerField('Identificador do Solicitante', db_index=True)
 
-    total_reimbursement_value = models.DecimalField('Valor da Restituição', max_digits=10, decimal_places=3, blank=True, null=True)
+    total_value = models.DecimalField('Valor da Restituição', max_digits=10, decimal_places=3, blank=True, null=True)
     total_net_value = models.DecimalField('Valor Líquido', max_digits=10, decimal_places=3)
-    reimbursement_numbers = models.CharField('Números dos Ressarcimentos', max_length=140)
-    net_values = models.CharField('Valores Líquidos dos Ressarcimentos', max_length=140)
+    numbers = ArrayField(models.CharField('Números dos Ressarcimentos', max_length=128), default=list)
 
-    congressperson_id = models.IntegerField('Identificador Único do Parlamentar', blank=True, null=True)
+    congressperson_id = models.IntegerField('Identificador Único do Parlamentar', blank=True, null=True, db_index=True)
     congressperson_name = models.CharField('Nome do Parlamentar', max_length=140, db_index=True, blank=True, null=True)
     congressperson_document = models.IntegerField('Número da Carteira Parlamentar', blank=True, null=True)
 
@@ -48,14 +59,14 @@ class Reimbursement(models.Model):
     state = models.CharField('UF', max_length=2, db_index=True, blank=True, null=True)
 
     term_id = models.IntegerField('Código da Legislatura', blank=True, null=True)
-    term = models.IntegerField('Número da Legislatura', blank=True, null=True)
+    term = models.IntegerField('Número da Legislatura', blank=True, null=True, db_index=True)
 
-    subquota_id = models.IntegerField('Número da Subcota', db_index=True)
+    subquota_number = models.IntegerField('Número da Subcota', db_index=True)
     subquota_description = models.CharField('Descrição da Subcota', max_length=140, db_index=True)
     subquota_group_id = models.IntegerField('Número da Especificação da Subcota', blank=True, null=True)
     subquota_group_description = models.CharField('Descrição da Especificação da Subcota', max_length=140, blank=True, null=True)
 
-    supplier = models.CharField('Fornecedor', max_length=140)
+    supplier = models.CharField('Fornecedor', max_length=256)
     cnpj_cpf = models.CharField('CNPJ ou CPF', max_length=14, db_index=True, blank=True, null=True)
 
     document_type = models.IntegerField('Indicativo de Tipo de Documento Fiscal')
@@ -67,7 +78,6 @@ class Reimbursement(models.Model):
     remark_value = models.DecimalField('Valor da Glosa', max_digits=10, decimal_places=3, blank=True, null=True)
     installment = models.IntegerField('Número da Parcela', blank=True, null=True)
     batch_number = models.IntegerField('Número do Lote')
-    reimbursement_values = models.CharField('Valores dos Ressarcimentos', max_length=140, blank=True, null=True)
 
     passenger = models.CharField('Passageiro', max_length=140, blank=True, null=True)
     leg_of_the_trip = models.CharField('Trecho', max_length=140, blank=True, null=True)
@@ -109,16 +119,8 @@ class Reimbursement(models.Model):
         return self.receipt_url
 
     @property
-    def all_net_values(self):
-        return self.as_list(self.net_values, float)
-
-    @property
-    def all_reimbursement_values(self):
-        return self.as_list(self.reimbursement_values, float)
-
-    @property
-    def all_reimbursement_numbers(self):
-        return self.as_list(self.reimbursement_numbers, int)
+    def all_numbers(self):
+        return [int(num) for num in self.numbers if num is not None]
 
     @staticmethod
     def as_list(content, cast=None):
@@ -137,7 +139,7 @@ class Reimbursement(models.Model):
 
 class Tweet(models.Model):
 
-    reimbursement = models.OneToOneField(Reimbursement, on_delete=models.CASCADE)
+    reimbursement = models.OneToOneField(Reimbursement, on_delete=models.CASCADE, db_index=True)
     status = models.DecimalField('Tweet ID', db_index=True, max_digits=25, decimal_places=0)
 
     def get_url(self):
